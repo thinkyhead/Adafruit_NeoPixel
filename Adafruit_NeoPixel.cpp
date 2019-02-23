@@ -1873,6 +1873,8 @@ void Adafruit_NeoPixel::show(void) {
 
 #elif defined(__LPC1768__) || defined(__LPC1769__) // LPC176x
 
+  #error "Yes, this is __LPC1768__ or __LPC1769__!"
+
   #define SCALE      VARIANT_MCK / 2UL / 1000000UL
   #define INST       (2UL * F_CPU / VARIANT_MCK)
   #define TIME_800_0 ((int)(0.40 * SCALE + 0.5) - (5 * INST))
