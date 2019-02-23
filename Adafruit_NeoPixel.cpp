@@ -1871,7 +1871,70 @@ void Adafruit_NeoPixel::show(void) {
   while(*timeValue < period); // Wait for last bit
   TC_Stop(TC1, 0);
 
-#endif // end Due
+#elif defined(__LPC1768__) || defined(__LPC1769__) // LPC176x
+
+  #define SCALE      VARIANT_MCK / 2UL / 1000000UL
+  #define INST       (2UL * F_CPU / VARIANT_MCK)
+  #define TIME_800_0 ((int)(0.40 * SCALE + 0.5) - (5 * INST))
+  #define TIME_800_1 ((int)(0.80 * SCALE + 0.5) - (5 * INST))
+  #define PERIOD_800 ((int)(1.25 * SCALE + 0.5) - (5 * INST))
+  #define TIME_400_0 ((int)(0.50 * SCALE + 0.5) - (5 * INST))
+  #define TIME_400_1 ((int)(1.20 * SCALE + 0.5) - (5 * INST))
+  #define PERIOD_400 ((int)(2.50 * SCALE + 0.5) - (5 * INST))
+
+  int             pinMask, time0, time1, period, t;
+  Pio            *port;
+  volatile WoReg *portSet, *portClear, *timeValue, *timeReset;
+  uint8_t        *p, *end, pix, mask;
+
+  pmc_set_writeprotect(false);
+  pmc_enable_periph_clk((uint32_t)TC3_IRQn);
+  TC_Configure(TC1, 0,
+    TC_CMR_WAVE | TC_CMR_WAVSEL_UP | TC_CMR_TCCLKS_TIMER_CLOCK1);
+  TC_Start(TC1, 0);
+
+  pinMask   = g_APinDescription[pin].ulPin; // Don't 'optimize' these into
+  port      = g_APinDescription[pin].pPort; // declarations above.  Want to
+  portSet   = &(port->PIO_SODR);            // burn a few cycles after
+  portClear = &(port->PIO_CODR);            // starting timer to minimize
+  timeValue = &(TC1->TC_CHANNEL[0].TC_CV);  // the initial 'while'.
+  timeReset = &(TC1->TC_CHANNEL[0].TC_CCR);
+  p         =  pixels;
+  end       =  p + numBytes;
+  pix       = *p++;
+  mask      = 0x80;
+
+#ifdef NEO_KHZ400 // 800 KHz check needed only if 400 KHz support enabled
+  if(is800KHz) {
+#endif
+    time0  = TIME_800_0;
+    time1  = TIME_800_1;
+    period = PERIOD_800;
+#ifdef NEO_KHZ400
+  } else { // 400 KHz bitstream
+    time0  = TIME_400_0;
+    time1  = TIME_400_1;
+    period = PERIOD_400;
+  }
+#endif
+
+  for(t = time0;; t = time0) {
+    if(pix & mask) t = time1;
+    while(*timeValue < period);
+    *portSet   = pinMask;
+    *timeReset = TC_CCR_CLKEN | TC_CCR_SWTRG;
+    while(*timeValue < t);
+    *portClear = pinMask;
+    if(!(mask >>= 1)) {   // This 'inside-out' loop logic utilizes
+      if(p >= end) break; // idle time to minimize inter-byte delays.
+      pix = *p++;
+      mask = 0x80;
+    }
+  }
+  while(*timeValue < period); // Wait for last bit
+  TC_Stop(TC1, 0);
+
+#endif // end LPC1768/9
 
 // END ARM ----------------------------------------------------------------
 
